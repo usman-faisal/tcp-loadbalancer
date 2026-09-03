@@ -1,0 +1,4 @@
+port: 80
+backend_list:
+  - localhost:8000
+  - localhost:8001
