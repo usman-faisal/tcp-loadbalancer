@@ -7,7 +7,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"usman-faisal/tcp-loadbalancer/config"
+	"usman-faisal/tcp-loadbalancer/internal/config"
 )
 
 type SafeInstanceMap struct {
