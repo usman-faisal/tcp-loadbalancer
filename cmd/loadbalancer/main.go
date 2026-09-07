@@ -8,84 +8,50 @@ import (
 	"strconv"
 	"sync"
 	"usman-faisal/tcp-loadbalancer/internal/config"
+	"usman-faisal/tcp-loadbalancer/internal/leastconn-balancer"
 )
 
-type SafeInstanceMap struct {
-	mu   sync.RWMutex
-	data map[string]int
-}
 
-func initiateSafeInstanceMap(instanceList []string) *SafeInstanceMap {
-	return &SafeInstanceMap{
-		data: buildInstanceMap(instanceList),
-	}
-}
-
-func (s *SafeInstanceMap) Increment(key string) {
-	s.mu.Lock()
-	s.data[key] += 1
-	s.mu.Unlock()
-}
-
-func (s *SafeInstanceMap) Decrement(key string) {
-	s.mu.Lock()
-	s.data[key] += 1
-	s.mu.Unlock()
-}
-
-func (s *SafeInstanceMap) Choose() string{
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var minConnectionInstance string
-
-	for currInstance, numberConnections := range s.data {
-		if minConnectionInstance == "" || numberConnections < s.data[minConnectionInstance] {
-			minConnectionInstance = currInstance
+func initLeastConnBalancer(backendList []string)*leastconnbalancer.LeastConnBalancer {
+	leastConnBalancer:=leastconnbalancer.LeastConnBalancer{}
+	for _, b := range backendList {
+		backend:=&leastconnbalancer.Backend{
+			Addr: b,
+			ActiveConns: 0,
 		}
-	}
 
-	return minConnectionInstance
-}
-func (s *SafeInstanceMap) Snapshot() map[string]int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	snap := make(map[string]int, len(s.data))
-	for k, v := range s.data {
-		snap[k] = v
+		leastConnBalancer.Heap.Push(backend)
 	}
-	return snap
+	return &leastConnBalancer
 }
 
-func buildInstanceMap(instanceList []string) map[string]int {
-	m := make(map[string]int)
+func proxy(backend net.Conn, conn net.Conn, lc *leastconnbalancer.LeastConnBalancer, release func()) {
+	defer backend.Close()
+	defer conn.Close()
 
-	for _, val := range instanceList {
-		m[val] = 0
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	return m
-}
+	go func() {
+		defer wg.Done()
+	    io.Copy(backend, conn)
+		if tc, ok := backend.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+	}()
+	go func() {
+		defer wg.Done()
+	    io.Copy(conn, backend)
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.CloseWrite()
+		}
+	}()
 
-func (s *SafeInstanceMap) Dial(url string) (net.Conn, error) {
-	conn, err := net.Dial("tcp", url)
+	wg.Wait()
 
-	if err != nil {
-		return nil, err
-	}
+	release()
 
-	return conn, nil
-}
-
-
-func routeRequest(key string, instance net.Conn, conn net.Conn, safeInstanceMap *SafeInstanceMap) {
-	go io.Copy(instance, conn)
-	safeInstanceMap.Increment(key)
-
-	// response
-	io.Copy(conn, instance)
-	safeInstanceMap.Decrement(key)
-
-	instance.Close()
+	lc.Snapshot()
 }
 
 func main() {
@@ -96,7 +62,7 @@ func main() {
 		return
 	}
 
-	instanceList, port := cfg.BackendList, cfg.Port
+	backendList, port := cfg.BackendList, cfg.Port
 
 	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 
@@ -107,32 +73,42 @@ func main() {
 
 	fmt.Printf("listening on %s", ln.Addr().String())
 
-	safeInstanceMap := initiateSafeInstanceMap(instanceList)
+	lc := initLeastConnBalancer(backendList)
 
 	for {
 		// listen for requests
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println(err)
-			return
+			continue
 		}
 
 		log.Printf("accepting connection %s", conn.LocalAddr().String())
 
-		// choose which instance to dial
-		instanceToDial := safeInstanceMap.Choose()
+		backendToDial:=lc.Pick()
 
-		log.Printf("dialing instance %s", instanceToDial)
+		if backendToDial == nil {
+			log.Printf("no backend to dial")
+			conn.Close()
+			continue
+		}
 
-		instance, err := safeInstanceMap.Dial(instanceToDial)
+		log.Printf("dialing instance %s", backendToDial.Addr)
+
+		lc.Acquire(backendToDial)
+
+		backend,err:=net.Dial("tcp", backendToDial.Addr)
 
 		if err != nil {
 			log.Println(err)
+			lc.Release(backendToDial)
+			conn.Close()
+			continue
 		}
 
-		// route request and increment counter
-		go routeRequest(instanceToDial, instance, conn, safeInstanceMap)
+		go proxy(backend, conn, lc, func() {
+			lc.Release(backendToDial)
+		})
 
-		fmt.Println(safeInstanceMap.Snapshot())
 	}
 }
