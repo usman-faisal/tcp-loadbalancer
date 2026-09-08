@@ -8,24 +8,12 @@ import (
 	"strconv"
 	"sync"
 	"usman-faisal/tcp-loadbalancer/internal/config"
-	"usman-faisal/tcp-loadbalancer/internal/leastconn-balancer"
+	"usman-faisal/tcp-loadbalancer/internal/scheduler"
+	"usman-faisal/tcp-loadbalancer/internal/scheduler/leastconn"
 )
 
 
-func initLeastConnBalancer(backendList []string)*leastconnbalancer.LeastConnBalancer {
-	leastConnBalancer:=leastconnbalancer.LeastConnBalancer{}
-	for _, b := range backendList {
-		backend:=&leastconnbalancer.Backend{
-			Addr: b,
-			ActiveConns: 0,
-		}
-
-		leastConnBalancer.Heap.Push(backend)
-	}
-	return &leastConnBalancer
-}
-
-func proxy(backend net.Conn, conn net.Conn, lc *leastconnbalancer.LeastConnBalancer, release func()) {
+func proxy(backend net.Conn, conn net.Conn, cleanup func()) {
 	defer backend.Close()
 	defer conn.Close()
 
@@ -34,14 +22,14 @@ func proxy(backend net.Conn, conn net.Conn, lc *leastconnbalancer.LeastConnBalan
 
 	go func() {
 		defer wg.Done()
-	    io.Copy(backend, conn)
+		io.Copy(backend, conn)
 		if tc, ok := backend.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
 	}()
 	go func() {
 		defer wg.Done()
-	    io.Copy(conn, backend)
+		io.Copy(conn, backend)
 		if tc, ok := conn.(*net.TCPConn); ok {
 			tc.CloseWrite()
 		}
@@ -49,9 +37,7 @@ func proxy(backend net.Conn, conn net.Conn, lc *leastconnbalancer.LeastConnBalan
 
 	wg.Wait()
 
-	release()
-
-	lc.Snapshot()
+	cleanup()
 }
 
 func main() {
@@ -73,7 +59,9 @@ func main() {
 
 	fmt.Printf("listening on %s", ln.Addr().String())
 
-	lc := initLeastConnBalancer(backendList)
+	lc := leastconnbalancer.New(backendList)
+
+	var s scheduler.Scheduler[*leastconnbalancer.Backend] = lc
 
 	for {
 		// listen for requests
@@ -85,7 +73,7 @@ func main() {
 
 		log.Printf("accepting connection %s", conn.LocalAddr().String())
 
-		backendToDial:=lc.Pick()
+		backendToDial := s.Pick()
 
 		if backendToDial == nil {
 			log.Printf("no backend to dial")
@@ -95,20 +83,20 @@ func main() {
 
 		log.Printf("dialing instance %s", backendToDial.Addr)
 
-		lc.Acquire(backendToDial)
+		s.Handle(backendToDial)
 
-		backend,err:=net.Dial("tcp", backendToDial.Addr)
+		backend, err := net.Dial("tcp", backendToDial.Addr)
 
 		if err != nil {
 			log.Println(err)
-			lc.Release(backendToDial)
+			s.Cleanup(backendToDial)
 			conn.Close()
 			continue
 		}
 
-		go proxy(backend, conn, lc, func() {
-			lc.Release(backendToDial)
+		go proxy(backend, conn, func() {
+			s.Snapshot()
+			s.Cleanup(backendToDial)
 		})
-
 	}
 }

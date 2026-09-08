@@ -5,12 +5,16 @@ import (
 )
 
 type Backend struct {
-	Addr        string
+	Addr string
 	ActiveConns int
 	index       int
 }
 
 type BackendHeap []*Backend
+
+func (b *Backend) GetAddr() string {
+	return b.Addr
+}
 
 func (pq BackendHeap) Len() int { return len(pq) }
 
@@ -45,4 +49,3 @@ func (pq *BackendHeap) update(backend *Backend, delta int) {
 	backend.ActiveConns += delta
 	heap.Fix(pq, backend.index)
 }
-

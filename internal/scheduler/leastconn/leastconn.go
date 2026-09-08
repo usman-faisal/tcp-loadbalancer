@@ -10,6 +10,19 @@ type LeastConnBalancer struct {
 	Heap BackendHeap
 }
 
+func New(backendList []string) *LeastConnBalancer {
+	leastConnBalancer := LeastConnBalancer{}
+	for _, b := range backendList {
+		backend := &Backend{
+			Addr:        b,
+			ActiveConns: 0,
+		}
+
+		leastConnBalancer.Heap.Push(backend)
+	}
+	return &leastConnBalancer
+}
+
 func (lc *LeastConnBalancer) Pick() *Backend {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
@@ -20,13 +33,13 @@ func (lc *LeastConnBalancer) Pick() *Backend {
 
 	return lc.Heap[0]
 }
-func (lc *LeastConnBalancer) Acquire(b *Backend) {
+func (lc *LeastConnBalancer) Handle(b *Backend) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
 	lc.Heap.update(b, 1)
 }
-func (lc *LeastConnBalancer) Release(b *Backend) {
+func (lc *LeastConnBalancer) Cleanup(b *Backend) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
