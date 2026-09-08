@@ -9,9 +9,7 @@ import (
 	"sync"
 	"usman-faisal/tcp-loadbalancer/internal/config"
 	"usman-faisal/tcp-loadbalancer/internal/scheduler"
-	"usman-faisal/tcp-loadbalancer/internal/scheduler/leastconn"
 )
-
 
 func proxy(backend net.Conn, conn net.Conn, cleanup func()) {
 	defer backend.Close()
@@ -59,9 +57,7 @@ func main() {
 
 	fmt.Printf("listening on %s", ln.Addr().String())
 
-	lc := leastconnbalancer.New(backendList)
-
-	var s scheduler.Scheduler[*leastconnbalancer.Backend] = lc
+	s := scheduler.Init(cfg.Algorithm, backendList)
 
 	for {
 		// listen for requests
@@ -81,11 +77,11 @@ func main() {
 			continue
 		}
 
-		log.Printf("dialing instance %s", backendToDial.Addr)
+		log.Printf("dialing instance %s", backendToDial.GetAddr())
 
 		s.Handle(backendToDial)
 
-		backend, err := net.Dial("tcp", backendToDial.Addr)
+		backend, err := net.Dial("tcp", backendToDial.GetAddr())
 
 		if err != nil {
 			log.Println(err)

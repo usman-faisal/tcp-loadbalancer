@@ -3,6 +3,7 @@ package roundrobin
 import (
 	"fmt"
 	"sync"
+	"usman-faisal/tcp-loadbalancer/internal/types"
 )
 
 type SafeRoundRobin struct {
@@ -31,20 +32,20 @@ func New(backendList []string) *SafeRoundRobin {
 	}
 }
 
-func (rb *SafeRoundRobin) Pick() *Backend {
+func (rb *SafeRoundRobin) Pick() types.IsBackend{
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
 	return rb.R.Curr()
 }
-func (rb *SafeRoundRobin) Handle(b *Backend) {
+func (rb *SafeRoundRobin) Handle(b types.IsBackend) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
 	rb.R.Next()
 }
 
-func (rb *SafeRoundRobin) Cleanup(b *Backend) {
+func (rb *SafeRoundRobin) Cleanup(b types.IsBackend) {
 	// todo:
 	fmt.Printf("cleanUp")
 

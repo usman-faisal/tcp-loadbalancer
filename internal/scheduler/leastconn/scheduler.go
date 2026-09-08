@@ -3,6 +3,7 @@ package leastconnbalancer
 import (
 	"fmt"
 	"sync"
+	"usman-faisal/tcp-loadbalancer/internal/types"
 )
 
 type LeastConnBalancer struct {
@@ -23,7 +24,7 @@ func New(backendList []string) *LeastConnBalancer {
 	return &leastConnBalancer
 }
 
-func (lc *LeastConnBalancer) Pick() *Backend {
+func (lc *LeastConnBalancer) Pick() types.IsBackend{
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
@@ -33,17 +34,19 @@ func (lc *LeastConnBalancer) Pick() *Backend {
 
 	return lc.Heap[0]
 }
-func (lc *LeastConnBalancer) Handle(b *Backend) {
+func (lc *LeastConnBalancer) Handle(b types.IsBackend) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
-	lc.Heap.update(b, 1)
+	backend := b.(*Backend)
+	lc.Heap.update(backend, 1)
 }
-func (lc *LeastConnBalancer) Cleanup(b *Backend) {
+func (lc *LeastConnBalancer) Cleanup(b types.IsBackend) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
 
-	lc.Heap.update(b, -1)
+	backend := b.(*Backend)
+	lc.Heap.update(backend, -1)
 }
 func (lc *LeastConnBalancer) Snapshot() {
 	for i, backend := range lc.Heap {

@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"usman-faisal/tcp-loadbalancer/internal/types"
 
 	"gopkg.in/yaml.v3"
 )
@@ -9,6 +10,7 @@ import (
 type Config struct {
 	Port int `yaml:"port"`
 	BackendList []string `yaml:"backend_list"`
+	Algorithm   types.Algorithm  `yaml:"algorithm"`
 }
 
 func Load(path string) (*Config, error){
