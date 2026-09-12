@@ -84,6 +84,7 @@ func main() {
 		backend, err := net.Dial("tcp", backendToDial.GetAddr())
 
 		if err != nil {
+			s.SetHealth(backendToDial, false)
 			log.Println(err)
 			s.Cleanup(backendToDial)
 			conn.Close()

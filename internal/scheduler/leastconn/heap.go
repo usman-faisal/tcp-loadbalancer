@@ -4,21 +4,15 @@ import (
 	"container/heap"
 )
 
-type Backend struct {
-	Addr string
-	ActiveConns int
-	index       int
-}
-
 type BackendHeap []*Backend
-
-func (b *Backend) GetAddr() string {
-	return b.Addr
-}
 
 func (pq BackendHeap) Len() int { return len(pq) }
 
 func (pq BackendHeap) Less(i, j int) bool {
+	if pq[i].IsHealthy != pq[j].IsHealthy {
+		return pq[i].IsHealthy
+	}
+
 	return pq[i].ActiveConns < pq[j].ActiveConns
 }
 

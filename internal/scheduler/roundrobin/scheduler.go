@@ -3,6 +3,7 @@ package roundrobin
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"usman-faisal/tcp-loadbalancer/internal/types"
 )
 
@@ -18,8 +19,9 @@ func New(backendList []string) *SafeRoundRobin {
 
 	var backends []*Backend
 	for _, v := range backendList {
-		backends=append(backends, &Backend{
-			Addr: v,
+		backends = append(backends, &Backend{
+			Addr:      v,
+			IsHealthy: true,
 		})
 
 	}
@@ -27,16 +29,28 @@ func New(backendList []string) *SafeRoundRobin {
 	return &SafeRoundRobin{
 		R: RoundRobin{
 			backends: backends,
-			index: 0,
+			index:    0,
 		},
 	}
 }
 
-func (rb *SafeRoundRobin) Pick() types.IsBackend{
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
+func (rb *SafeRoundRobin) Pick() types.IsBackend {
+	rb.mu.RLock()
+	defer rb.mu.RUnlock()
 
-	return rb.R.Curr()
+	n := len(rb.R.backends)
+	if n == 0 {
+		return nil
+	}
+
+	idx := atomic.LoadUint32(&rb.R.index)
+	for i := 0; i < n; i++ {
+		b := rb.R.backends[(idx+uint32(i))%uint32(n)]
+		if b.IsHealthy {
+			return b
+		}
+	}
+	return nil
 }
 func (rb *SafeRoundRobin) Handle(b types.IsBackend) {
 	rb.mu.Lock()
@@ -56,4 +70,15 @@ func (rb *SafeRoundRobin) Snapshot() {
 		fmt.Printf("[%d] addr=%s",
 			i, backend.Addr)
 	}
+}
+
+func (rb *SafeRoundRobin) SetHealth(b types.IsBackend, status bool) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	backend, ok := b.(*Backend)
+	if !ok {
+		return
+	}
+	backend.IsHealthy = status
 }

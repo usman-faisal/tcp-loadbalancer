@@ -4,12 +4,6 @@ import (
 	"sync/atomic"
 )
 
-type Backend struct {
-	Addr string
-}
-
-func (b *Backend) GetAddr() string { return b.Addr }
-
 type RoundRobin struct {
 	backends []*Backend
 	index    uint32

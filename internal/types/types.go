@@ -1,8 +1,15 @@
 package types
 
-// IsBackend defines the contract for all backend structs
+import "time"
+
+type Health struct {
+	IsHealthy   bool
+	Lastchecked time.Time
+}
+
 type IsBackend interface {
 	GetAddr() string
+	GetHealth() bool
 }
 
 type Algorithm string
