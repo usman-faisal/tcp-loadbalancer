@@ -1,23 +1,31 @@
 # TCP Load Balancer
 
-A minimal Go TCP load balancer that routes connections to the backend with the fewest active connections.
+A Go TCP load balancer with pluggable scheduling algorithms, connection tracking, and basic health checks.
 
 ![alt text](/assets/images/diagram.png)
 
 ## How it works
 
-Backends are tracked in a min-heap ordered by active connection count. Each incoming connection goes to the least busy backend, which gets dialed and proxied bidirectionally to the client. When the connection closes, the count drops and the heap updates so the next request goes wherever's least loaded.
+Backends are registered in a scheduler chosen by the `algorithm` config value. The load balancer accepts a connection, picks a backend, dials it, and proxies traffic bidirectionally. When a dial fails, the backend is marked unhealthy and skipped until it recovers. Connections are tracked and released when either side closes.
+
+### Scheduling algorithms
+
+- **round-robin** — picks backends in a fixed rotation, spreading connections evenly regardless of load.
+- **least-conn** — keeps backends in a min-heap ordered by active connection count and routes each new connection to the least busy backend.
 
 ## Config
 
-Backends are set in `config.yaml`:
+Backends and algorithm are set in `config.yaml`:
 
 ```yaml
 port: 80
 backend_list:
   - localhost:8000
   - localhost:8001
+algorithm: round-robin
 ```
+
+`algorithm` accepts either `round-robin` or `least-conn`.
 
 ## Running it
 
