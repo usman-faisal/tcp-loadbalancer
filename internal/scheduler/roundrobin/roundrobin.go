@@ -1,23 +1,22 @@
 package roundrobin
 
-import (
-	"usman-faisal/tcp-loadbalancer/internal/queue"
-	"usman-faisal/tcp-loadbalancer/internal/scheduler/common"
-)
+import "usman-faisal/tcp-loadbalancer/internal/queue"
 
-func New(backendList []string) *common.BaseScheduler {
+func New(backendList []string) *Scheduler {
 	if len(backendList) == 0 {
 		return nil
 	}
-	picker := &RoundRobinPicker{}
+	s := &Scheduler{}
 	for _, addr := range backendList {
-		picker.backends = append(picker.backends, &common.Backend{
-			Addr: addr, IsHealthy: true, Queue: queue.New(5), Sem: make(chan struct{}, 50),
+		s.backends = append(s.backends, &Backend{
+			Addr:      addr,
+			IsHealthy: true,
+			Queue:     queue.New(5),
+			Sem:       make(chan struct{}, 50),
 		})
 	}
-	base := common.NewBase(picker)
-	for _, b := range picker.backends {
-		go base.Drain(b)
+	for _, b := range s.backends {
+		go s.Drain(b)
 	}
-	return base
+	return s
 }

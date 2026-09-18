@@ -2,20 +2,24 @@ package leastconnbalancer
 
 import (
 	"container/heap"
+
 	"usman-faisal/tcp-loadbalancer/internal/queue"
-	"usman-faisal/tcp-loadbalancer/internal/scheduler/common"
 )
 
-func New(backendList []string) *common.BaseScheduler {
-	picker := &LeastConnPicker{}
-	heap.Init(&picker.Heap)
+func New(backendList []string) *Scheduler {
+	s := &Scheduler{}
+	heap.Init(&s.heap)
 	for _, addr := range backendList {
-		b := &common.Backend{Addr: addr, IsHealthy: true, Queue: queue.New(5), Sem: make(chan struct{}, 50)}
-		heap.Push(&picker.Heap, b)
+		b := &Backend{
+			Addr:      addr,
+			IsHealthy: true,
+			Queue:     queue.New(5),
+			Sem:       make(chan struct{}, 50),
+		}
+		heap.Push(&s.heap, b)
 	}
-	base := common.NewBase(picker)
-	for _, b := range picker.Heap {
-		go base.Drain(b)
+	for _, b := range s.heap {
+		go s.Drain(b)
 	}
-	return base
+	return s
 }

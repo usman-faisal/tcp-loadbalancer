@@ -1,45 +1,42 @@
 package leastconnbalancer
 
-import (
-	"container/heap"
-	"usman-faisal/tcp-loadbalancer/internal/scheduler/common"
-)
+import "container/heap"
 
-type BackendHeap []*common.Backend
+type BackendHeap []*Backend
 
-func (pq BackendHeap) Len() int { return len(pq) }
+func (h BackendHeap) Len() int { return len(h) }
 
-func (pq BackendHeap) Less(i, j int) bool {
-	if pq[i].IsHealthy != pq[j].IsHealthy {
-		return pq[i].IsHealthy
+func (h BackendHeap) Less(i, j int) bool {
+	if h[i].IsHealthy != h[j].IsHealthy {
+		return h[i].IsHealthy
 	}
-	return pq[i].ActiveConns < pq[j].ActiveConns
+	return h[i].ActiveConns < h[j].ActiveConns
 }
 
-func (pq BackendHeap) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].Index = i
-	pq[j].Index = j
+func (h BackendHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+	h[i].Index = i
+	h[j].Index = j
 }
 
-func (pq *BackendHeap) Push(x any) {
-	n := len(*pq)
-	backend := x.(*common.Backend)
-	backend.Index = n
-	*pq = append(*pq, backend)
+func (h *BackendHeap) Push(x any) {
+	n := len(*h)
+	b := x.(*Backend)
+	b.Index = n
+	*h = append(*h, b)
 }
 
-func (pq *BackendHeap) Pop() any {
-	old := *pq
+func (h *BackendHeap) Pop() any {
+	old := *h
 	n := len(old)
-	backend := old[n-1]
+	b := old[n-1]
 	old[n-1] = nil
-	backend.Index = -1
-	*pq = old[0 : n-1]
-	return backend
+	b.Index = -1
+	*h = old[0 : n-1]
+	return b
 }
 
-func (pq *BackendHeap) update(backend *common.Backend, delta int) {
-	backend.ActiveConns += delta
-	heap.Fix(pq, backend.Index)
+func (h *BackendHeap) update(b *Backend, delta int) {
+	b.ActiveConns += delta
+	heap.Fix(h, b.Index)
 }

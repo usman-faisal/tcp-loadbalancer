@@ -5,16 +5,11 @@ import "usman-faisal/tcp-loadbalancer/internal/queue"
 type Backend struct {
 	Addr        string
 	ActiveConns int
-	index       int
+	Index       int
 	IsHealthy   bool
-	queue       *queue.ConnQueue
-	sem         chan struct{}
+	Queue       *queue.ConnQueue
+	Sem         chan struct{}
 }
 
-func (b *Backend) GetAddr() string {
-	return b.Addr
-}
-
-func (b *Backend) GetHealth() bool {
-	return b.IsHealthy
-}
+func (b *Backend) GetAddr() string { return b.Addr }
+func (b *Backend) GetHealth() bool { return b.IsHealthy }
