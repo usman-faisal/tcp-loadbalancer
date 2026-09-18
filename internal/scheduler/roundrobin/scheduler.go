@@ -76,8 +76,12 @@ func (s *Scheduler) handle(conn net.Conn, b *Backend) {
 	if err != nil {
 		s.SetHealth(b, false)
 		log.Println(err)
-		conn.Close()
 		<-b.Sem
+		go func(c net.Conn) {
+			if _, err := s.Submit(c); err != nil {
+				c.Close()
+			}
+		}(conn)
 		return
 	}
 
@@ -90,7 +94,11 @@ func (s *Scheduler) handle(conn net.Conn, b *Backend) {
 func (s *Scheduler) Drain(b *Backend) {
 	for conn := range b.Queue.Waiting {
 		if !b.GetHealth() {
-			conn.Close()
+			go func(c net.Conn) {
+				if _, err := s.Submit(c); err != nil {
+					c.Close()
+				}
+			}(conn)
 			continue
 		}
 		b.Sem <- struct{}{}

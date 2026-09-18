@@ -4,6 +4,7 @@ import (
 	"container/heap"
 
 	"usman-faisal/tcp-loadbalancer/internal/queue"
+	"usman-faisal/tcp-loadbalancer/internal/scheduler/common"
 )
 
 func New(backendList []string) *Scheduler {
@@ -13,8 +14,8 @@ func New(backendList []string) *Scheduler {
 		b := &Backend{
 			Addr:      addr,
 			IsHealthy: true,
-			Queue:     queue.New(5),
-			Sem:       make(chan struct{}, 50),
+			Queue:     queue.New(common.DEFAULT_QUEUE_SIZE),
+			Sem:       make(chan struct{}, common.DEFAULT_SEM_SIZE),
 		}
 		heap.Push(&s.heap, b)
 	}

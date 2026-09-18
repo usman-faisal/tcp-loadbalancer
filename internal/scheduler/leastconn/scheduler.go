@@ -3,9 +3,11 @@ package leastconnbalancer
 import (
 	"container/heap"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,20 +74,24 @@ func (s *Scheduler) SetHealth(b types.IsBackend, status bool) {
 
 func (s *Scheduler) Snapshot() {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	snapshot := make([]*Backend, len(s.heap))
 	copy(snapshot, s.heap)
+	s.mu.RUnlock()
+
 	sort.Slice(snapshot, func(i, j int) bool {
 		return snapshot[i].ActiveConns < snapshot[j].ActiveConns
 	})
-	log.Println("--- backend snapshot (leastconn) ---")
+
+	var sb strings.Builder
+	sb.WriteString("--- backend snapshot (leastconn) ---\n")
 	for i, b := range snapshot {
 		status := "UP"
 		if !b.IsHealthy {
 			status = "DOWN"
 		}
-		log.Printf("[%d] addr=%s conns=%d queued=%d %s\n", i, b.Addr, b.ActiveConns, b.Queue.Len(), status)
+		fmt.Fprintf(&sb, "[%d] addr=%s conns=%d queued=%d %s\n", i, b.Addr, b.ActiveConns, b.Queue.Len(), status)
 	}
+	log.Print(sb.String())
 }
 
 func (s *Scheduler) handle(conn net.Conn, b *Backend) {
@@ -94,8 +100,12 @@ func (s *Scheduler) handle(conn net.Conn, b *Backend) {
 		s.SetHealth(b, false)
 		log.Println(err)
 		s.release(b)
-		conn.Close()
 		<-b.Sem
+		go func(c net.Conn) {
+			if _, err := s.Submit(c); err != nil {
+				c.Close()
+			}
+		}(conn)
 		return
 	}
 
@@ -109,8 +119,14 @@ func (s *Scheduler) handle(conn net.Conn, b *Backend) {
 func (s *Scheduler) Drain(b *Backend) {
 	for conn := range b.Queue.Waiting {
 		if !b.GetHealth() {
-			conn.Close()
 			s.release(b)
+
+			// reroute to another backend
+			go func(c net.Conn) {
+				if _, err := s.Submit(c); err != nil {
+					c.Close()
+				}
+			}(conn)
 			continue
 		}
 		b.Sem <- struct{}{}
