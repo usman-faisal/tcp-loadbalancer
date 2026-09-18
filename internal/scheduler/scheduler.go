@@ -1,14 +1,16 @@
 package scheduler
 
 import (
+	"net"
 	leastconnbalancer "usman-faisal/tcp-loadbalancer/internal/scheduler/leastconn"
 	"usman-faisal/tcp-loadbalancer/internal/scheduler/roundrobin"
 	"usman-faisal/tcp-loadbalancer/internal/types"
 )
 
 type Scheduler interface {
-	Pick() types.IsBackend
-	Handle(b types.IsBackend)
+	// Pick() types.IsBackend
+	// Handle(b types.IsBackend)
+	Submit(conn net.Conn) (types.IsBackend, error)
 	Cleanup(b types.IsBackend)
 	SetHealth(b types.IsBackend, health bool)
 	Snapshot()

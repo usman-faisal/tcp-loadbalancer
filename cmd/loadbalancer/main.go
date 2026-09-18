@@ -2,41 +2,12 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"strconv"
-	"sync"
 	"usman-faisal/tcp-loadbalancer/internal/config"
 	"usman-faisal/tcp-loadbalancer/internal/scheduler"
 )
-
-func proxy(backend net.Conn, conn net.Conn, cleanup func()) {
-	defer backend.Close()
-	defer conn.Close()
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(backend, conn)
-		if tc, ok := backend.(*net.TCPConn); ok {
-			tc.CloseWrite()
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		io.Copy(conn, backend)
-		if tc, ok := conn.(*net.TCPConn); ok {
-			tc.CloseWrite()
-		}
-	}()
-
-	wg.Wait()
-
-	cleanup()
-}
 
 func main() {
 	cfg, err := config.Load("config.yaml")
@@ -69,31 +40,17 @@ func main() {
 
 		log.Printf("accepting connection %s", conn.LocalAddr().String())
 
-		backendToDial := s.Pick()
+		go func(conn net.Conn) {
+			backendToDial, err := s.Submit(conn)
 
-		if backendToDial == nil {
-			log.Printf("no backend to dial")
-			conn.Close()
-			continue
-		}
+			if err != nil {
+				log.Println(err)
+				conn.Close()
+				return
+			}
 
-		log.Printf("dialing instance %s", backendToDial.GetAddr())
+			log.Printf("dialing instance %s", backendToDial.GetAddr())
+		}(conn)
 
-		s.Handle(backendToDial)
-
-		backend, err := net.Dial("tcp", backendToDial.GetAddr())
-
-		if err != nil {
-			s.SetHealth(backendToDial, false)
-			log.Println(err)
-			s.Cleanup(backendToDial)
-			conn.Close()
-			continue
-		}
-
-		go proxy(backend, conn, func() {
-			s.Snapshot()
-			s.Cleanup(backendToDial)
-		})
 	}
 }

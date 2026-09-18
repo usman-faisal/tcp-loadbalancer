@@ -1,15 +1,22 @@
 package roundrobin
 
 import (
-	"fmt"
+	"errors"
+	"log"
+	"net"
 	"sync"
-	"sync/atomic"
+	"time"
+
+	"usman-faisal/tcp-loadbalancer/internal/queue"
+	"usman-faisal/tcp-loadbalancer/internal/transport"
 	"usman-faisal/tcp-loadbalancer/internal/types"
 )
 
+var ErrNoBackends = errors.New("roundrobin: no backends provided")
+
 type SafeRoundRobin struct {
-	R  RoundRobin
-	mu sync.RWMutex
+	mu sync.Mutex
+	r  RoundRobin
 }
 
 func New(backendList []string) *SafeRoundRobin {
@@ -17,68 +24,99 @@ func New(backendList []string) *SafeRoundRobin {
 		return nil
 	}
 
-	var backends []*Backend
-	for _, v := range backendList {
-		backends = append(backends, &Backend{
-			Addr:      v,
-			IsHealthy: true,
-		})
-
-	}
-
-	return &SafeRoundRobin{
-		R: RoundRobin{
-			backends: backends,
+	safeRoundRobin := &SafeRoundRobin{
+		r: RoundRobin{
+			backends: make([]*Backend, 0, len(backendList)),
 			index:    0,
 		},
 	}
+
+	for _, addr := range backendList {
+		safeRoundRobin.r.backends = append(safeRoundRobin.r.backends, &Backend{
+			Addr:      addr,
+			IsHealthy: true,
+			queue:     queue.New(2),
+		})
+	}
+
+	for _, backend := range safeRoundRobin.r.backends {
+		go safeRoundRobin.ProcessRequestsPerBackend(backend)
+	}
+
+	return safeRoundRobin
 }
 
 func (rb *SafeRoundRobin) Pick() types.IsBackend {
-	rb.mu.RLock()
-	defer rb.mu.RUnlock()
-
-	n := len(rb.R.backends)
-	if n == 0 {
-		return nil
-	}
-
-	idx := atomic.LoadUint32(&rb.R.index)
-	for i := 0; i < n; i++ {
-		b := rb.R.backends[(idx+uint32(i))%uint32(n)]
-		if b.IsHealthy {
-			return b
-		}
-	}
-	return nil
-}
-func (rb *SafeRoundRobin) Handle(b types.IsBackend) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	rb.R.Next()
+	b := rb.r.pick()
+	if b == nil {
+		return nil
+	}
+	return b
 }
 
-func (rb *SafeRoundRobin) Cleanup(b types.IsBackend) {
-	// todo:
-	fmt.Printf("cleanUp")
+func (rb *SafeRoundRobin) Submit(conn net.Conn) (types.IsBackend, error) {
+	best := rb.Pick()
+	if best == nil {
+		return nil, errors.New("no healthy backend")
+	}
+	backend := best.(*Backend)
 
+	if !backend.IsHealthy {
+		return nil, errors.New("No healthy backend")
+	}
+
+	if err := backend.queue.Enqueue(conn, time.Second*5); err != nil {
+		return nil, err
+	}
+
+	return backend, nil
+}
+
+func (rb *SafeRoundRobin) ProcessRequestsPerBackend(b types.IsBackend) {
+	backend := b.(*Backend)
+	for conn := range backend.queue.Waiting {
+		time.Sleep(2 * time.Second)
+		dialedBackend, err := net.Dial("tcp", backend.GetAddr())
+		if err != nil {
+			rb.SetHealth(backend, false)
+			log.Println(err)
+			rb.Cleanup(backend)
+			conn.Close()
+			continue
+		}
+		go transport.Proxy(dialedBackend, conn, func() {
+			rb.Snapshot()
+			rb.Cleanup(backend)
+		})
+	}
+}
+
+func (rb *SafeRoundRobin) Cleanup(b types.IsBackend) {}
+
+func (rb *SafeRoundRobin) SetHealth(b types.IsBackend, status bool) {
+	backend, ok := b.(*Backend)
+	if !ok || backend == nil {
+		return
+	}
+
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	backend.IsHealthy = status
 }
 
 func (rb *SafeRoundRobin) Snapshot() {
-	for i, backend := range rb.R.backends {
-		fmt.Printf("[%d] addr=%s",
-			i, backend.Addr)
-	}
-}
-
-func (rb *SafeRoundRobin) SetHealth(b types.IsBackend, status bool) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	backend, ok := b.(*Backend)
-	if !ok {
-		return
+	log.Println("--- backend snapshot ---")
+	for _, backend := range rb.r.backends {
+		status := "UP"
+		if !backend.IsHealthy {
+			status = "DOWN"
+		}
+		log.Printf("  %-20s queued=%-3d %s\n", backend.Addr, backend.queue.Len(), status)
 	}
-	backend.IsHealthy = status
 }

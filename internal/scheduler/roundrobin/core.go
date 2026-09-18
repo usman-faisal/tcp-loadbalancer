@@ -1,20 +1,22 @@
 package roundrobin
 
-import (
-	"sync/atomic"
-)
-
 type RoundRobin struct {
 	backends []*Backend
-	index    uint32
+	index    int
 }
 
-func (r *RoundRobin) Curr() *Backend {
-	n := atomic.LoadUint32(&r.index)
-	return r.backends[n%uint32(len(r.backends))]
-}
+func (r *RoundRobin) pick() *Backend {
+	n := len(r.backends)
+	if n == 0 {
+		return nil
+	}
 
-func (r *RoundRobin) Next() *Backend {
-	n := atomic.AddUint32(&r.index, 1)
-	return r.backends[n%uint32(len(r.backends))]
+	for i := 0; i < n; i++ {
+		b := r.backends[r.index]
+		r.index = (r.index + 1) % n
+		if b.IsHealthy {
+			return b
+		}
+	}
+	return nil
 }
