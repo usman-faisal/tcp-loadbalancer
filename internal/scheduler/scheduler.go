@@ -8,8 +8,6 @@ import (
 )
 
 type Scheduler interface {
-	// Pick() types.IsBackend
-	// Handle(b types.IsBackend)
 	Submit(conn net.Conn) (types.IsBackend, error)
 	Cleanup(b types.IsBackend)
 	SetHealth(b types.IsBackend, health bool)

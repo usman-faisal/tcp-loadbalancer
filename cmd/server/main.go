@@ -14,14 +14,13 @@ func main() {
 	r := gin.Default()
 
 	r.GET("/ping", func(c *gin.Context) {
-		time.Sleep(time.Second*5)
+		time.Sleep(time.Second * 5)
 		c.JSON(200, gin.H{
 			"message": "pong",
 			"port":    *port,
 		})
 	})
 	r.GET("/", func(c *gin.Context) {
-		time.Sleep(time.Second*5)
 		c.JSON(200, gin.H{
 			"message": "pong",
 			"port":    *port,
